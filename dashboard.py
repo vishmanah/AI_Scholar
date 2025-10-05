@@ -70,7 +70,12 @@ if st.session_state.scholar_ai:
     with col2:
         st.subheader("📝 Log")
         log_text = "\n".join(st.session_state.log_messages[:20])
-        st.text_area("", log_text, height=300)
+        st.text_area(
+            "Registro (accesible)",
+            log_text,
+            height=300,
+            label_visibility="hidden",
+        )
 
     st.header("🧠 Arquitectura Modular")
     if ai.module_map:

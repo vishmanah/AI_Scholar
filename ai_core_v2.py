@@ -195,6 +195,8 @@ class EpisodicMemory:
         }
 
 # ==================== RED AUTO-ORGANIZADORA AVANZADA ====================
+
+
 class AdvancedSelfOrganizingNetwork(nn.Module):
     """Red con memoria, atención y consolidación mejoradas"""
     def __init__(self, input_size, output_size, novelty_threshold=0.5):
@@ -204,7 +206,10 @@ class AdvancedSelfOrganizingNetwork(nn.Module):
         self.novelty_threshold = novelty_threshold
         
         # Gatekeeper mejorado con embeddings
-        self.gatekeeper_embeddings = torch.empty((0, input_size), device=device)
+        self.gatekeeper_embeddings = torch.empty(
+            (0, input_size),
+            device=device,
+        )
         self.module_metadata = []
         
         # Módulos especializados
@@ -238,7 +243,11 @@ class AdvancedSelfOrganizingNetwork(nn.Module):
             
             return winner_idx.item(), distance
     
-    def create_new_module(self, x_prototype: torch.Tensor, context: Optional[str] = None):
+    def create_new_module(
+        self,
+        x_prototype: torch.Tensor,
+        context: Optional[str] = None,
+    ):
         """Crear nuevo módulo con arquitectura adaptativa"""
         # Determinar arquitectura basada en complejidad del problema
         complexity = self._estimate_complexity()
@@ -246,14 +255,14 @@ class AdvancedSelfOrganizingNetwork(nn.Module):
         
         # Crear módulo
         new_module = AdvancedNeurogenicModule(
-            self.input_size, 
+            self.input_size,
             self.output_size,
             hidden_sizes=hidden_sizes
         ).to(device)
         
         self.modules_list.append(new_module)
         self.gatekeeper_embeddings = torch.cat(
-            (self.gatekeeper_embeddings, x_prototype.unsqueeze(0)), 
+            (self.gatekeeper_embeddings, x_prototype.unsqueeze(0)),
             dim=0
         )
         
@@ -288,7 +297,11 @@ class AdvancedSelfOrganizingNetwork(nn.Module):
         else:
             return [base_size // 2, base_size // 4]
     
-    def forward(self, x: torch.Tensor, use_memory: bool = True) -> Tuple[torch.Tensor, int]:
+    def forward(
+        self,
+        x: torch.Tensor,
+        use_memory: bool = True,
+    ) -> Tuple[torch.Tensor, int]:
         """Forward con contexto de memoria"""
         # Buscar conocimientos relacionados en memoria
         context_nodes = []
@@ -333,14 +346,27 @@ class AdvancedSelfOrganizingNetwork(nn.Module):
             'total_modules': len(self.modules_list),
             'total_parameters': sum(p.numel() for p in self.parameters()),
             'memory_stats': self.episodic_memory.get_stats(),
-            'avg_module_age': np.mean([m.age for m in self.modules_list]) if self.modules_list else 0,
-            'module_activations': [m.activation_count for m in self.modules_list]
+            'avg_module_age': (
+                np.mean([m.age for m in self.modules_list])
+                if self.modules_list
+                else 0
+            ),
+            'module_activations': [
+                m.activation_count for m in self.modules_list
+            ],
         }
 
 # ==================== EXTRACTOR DE CONOCIMIENTO MEJORADO ====================
+ 
+
 class AdvancedKnowledgeExtractor:
     """Extractor con caché, procesamiento paralelo y múltiples fuentes"""
-    def __init__(self, model_name='all-MiniLM-L6-v2', lang='es', logger_callback=print):
+    def __init__(
+        self,
+        model_name='all-MiniLM-L6-v2',
+        lang='es',
+        logger_callback=print,
+    ):
         self.log = logger_callback
         self.log("Cargando modelo de lenguaje avanzado...")
         
@@ -349,8 +375,8 @@ class AdvancedKnowledgeExtractor:
         
         import wikipediaapi
         self.wiki_api = wikipediaapi.Wikipedia(
-            user_agent='AdvancedNeurogenicAI/2.0', 
-            language=lang
+            user_agent='AdvancedNeurogenicAI/2.0',
+            language=lang,
         )
         
         # Caché para evitar consultas repetidas
@@ -359,7 +385,11 @@ class AdvancedKnowledgeExtractor:
         
         self.log("Sistema de extracción avanzado listo.")
         
-    def get_knowledge_package(self, topic: str, depth: int = 1) -> Tuple[Optional[torch.Tensor], List[str], Dict]:
+    def get_knowledge_package(
+        self,
+        topic: str,
+        depth: int = 1,
+    ) -> Tuple[Optional[torch.Tensor], List[str], Dict]:
         """Extraer conocimiento con análisis profundo"""
         # Verificar caché
         if topic in self.cache:
@@ -375,7 +405,11 @@ class AdvancedKnowledgeExtractor:
             links = list(page.links.keys())[:20]
             
             # Procesar texto
-            sentences = [s.strip() for s in text.split('.') if len(s.strip()) > 20]
+            sentences = [
+                s.strip()
+                for s in text.split('.')
+                if len(s.strip()) > 20
+            ]
             
             if not sentences:
                 return None, [], {}
@@ -383,14 +417,17 @@ class AdvancedKnowledgeExtractor:
             # Generar embeddings
             with torch.no_grad():
                 embeddings = self.model.encode(
-                    sentences, 
-                    convert_to_tensor=True, 
+                    sentences,
+                    convert_to_tensor=True,
                     device=device,
-                    show_progress_bar=False
+                    show_progress_bar=False,
                 )
                 
             # Embedding ponderado
-            weights = torch.tensor([1.0 / (i + 1) for i in range(len(embeddings))], device=device)
+            weights = torch.tensor(
+                [1.0 / (i + 1) for i in range(len(embeddings))],
+                device=device,
+            )
             weights = weights / weights.sum()
             weighted_embedding = (embeddings.T @ weights)
             
@@ -422,20 +459,25 @@ class AdvancedKnowledgeExtractor:
         return [w for w, _ in Counter(words).most_common(top_n)]
 
 # ==================== ERUDITO AUTÓNOMO MEJORADO ====================
+ 
+
 class AdvancedAutonomousScholar:
-    """Sistema de aprendizaje con consolidación, priorización y meta-cognición"""
+    """Sistema de aprendizaje con consolidación, priorización y
+    meta-cognición"""
     def __init__(self, initial_topic: str, logger_callback=print):
         self.log = logger_callback
         
         # Red neuronal avanzada
         self.brain = AdvancedSelfOrganizingNetwork(
-            input_size=384, 
-            output_size=1, 
+            input_size=384,
+            output_size=1,
             novelty_threshold=0.5
         ).to(device)
         
         # Extractor mejorado
-        self.knowledge_extractor = AdvancedKnowledgeExtractor(logger_callback=self.log)
+        self.knowledge_extractor = AdvancedKnowledgeExtractor(
+            logger_callback=self.log,
+        )
         
         # Sistema de gestión de aprendizaje
         self.learning_frontier = deque([initial_topic])
@@ -464,7 +506,9 @@ class AdvancedAutonomousScholar:
         self.log(f"Estudiando: '{topic}'")
         self.processed_topics.add(topic)
         
-        embedding, links, metadata = self.knowledge_extractor.get_knowledge_package(topic)
+        embedding, links, metadata = (
+            self.knowledge_extractor.get_knowledge_package(topic)
+        )
         
         if embedding is None:
             return True
