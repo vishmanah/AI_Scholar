@@ -639,3 +639,74 @@ class AdvancedAutonomousScholar:
             'items': items,
             'suggested_next': [it['topic'] for it in items[:3]],
         }
+
+    # ==================== CONTROL MANUAL ====================
+    def learn_topic(self, topic: str) -> bool:
+        """Aprende un tema específico, ignorando la selección automática.
+
+        Devuelve True si el paso se ejecutó (aunque no haya embedding).
+        """
+        if not topic:
+            return False
+
+        # Evitar reprocesar
+        if topic in self.processed_topics:
+            return True
+
+        # Quitar de estructuras de control si está presente
+        try:
+            self.learning_frontier.remove(topic)
+        except Exception:
+            pass
+        # Filtrar de la cola de prioridad
+        self.priority_queue = [
+            (p, t) for (p, t) in self.priority_queue if t != topic
+        ]
+
+        self.log(f"Estudiando (manual): '{topic}'")
+        self.processed_topics.add(topic)
+
+        embedding, links, metadata = (
+            self.knowledge_extractor.get_knowledge_package(topic)
+        )
+
+        if embedding is None:
+            return True
+
+        num_modules_before = len(self.brain.modules_list)
+        _, module_idx = self.brain(embedding, use_memory=True)
+
+        node = KnowledgeNode(
+            topic=topic,
+            embedding=embedding,
+            timestamp=len(self.processed_topics),
+            module_id=module_idx,
+            importance_score=self._calculate_importance(metadata)
+        )
+        self.brain.episodic_memory.store(node)
+
+        if module_idx not in self.module_map:
+            self.module_map[module_idx] = []
+        self.module_map[module_idx].append(topic)
+
+        if len(self.brain.modules_list) > num_modules_before:
+            self.log(f"Nuevo módulo {module_idx} creado para '{topic}'")
+
+        self.knowledge_graph[topic] = links[:10]
+        self._expand_curiosity(links, metadata)
+
+        if len(self.processed_topics) % 50 == 0:
+            self.brain.consolidate_knowledge()
+            self.log("Consolidación de conocimiento realizada")
+
+        return True
+
+    def add_to_frontier(self, topic: str):
+        """Agregar un tema a la frontera si no existe."""
+        if not topic:
+            return
+        if (
+            topic not in self.learning_frontier
+            and topic not in self.processed_topics
+        ):
+            self.learning_frontier.append(topic)

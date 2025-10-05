@@ -87,6 +87,54 @@ if st.session_state.scholar_ai:
                 for topic in topics[:3]:
                     st.write(f"• {topic}")
 
+    st.header("🧭 Control Manual de Aprendizaje")
+    frontier_list = list(ai.learning_frontier)
+    priority_list = [t for _, t in sorted(ai.priority_queue, reverse=True)]
+
+    colm1, colm2 = st.columns(2)
+    with colm1:
+        st.subheader("Frontera actual")
+        selected_frontier = st.multiselect(
+            "Selecciona temas a aprender (frontera)",
+            frontier_list,
+            max_selections=10,
+        )
+    with colm2:
+        st.subheader("Prioridades")
+        selected_priority = st.multiselect(
+            "Selecciona temas a aprender (prioridad)",
+            priority_list,
+            max_selections=10,
+        )
+
+    cols_actions = st.columns(3)
+    with cols_actions[0]:
+        if st.button("Aprender seleccionados"):
+            to_learn = list(
+                dict.fromkeys(selected_frontier + selected_priority)
+            )
+            learned = 0
+            for t in to_learn[:20]:
+                if ai.learn_topic(t):
+                    learned += 1
+            st.success(f"Aprendidos {learned} tema(s)")
+            st.rerun()
+    with cols_actions[1]:
+        new_topic = st.text_input(
+            "Agregar tema a la frontera",
+            "Aprendizaje automático",
+        )
+        if st.button("Agregar") and new_topic.strip():
+            ai.add_to_frontier(new_topic.strip())
+            st.info(f"Agregado '{new_topic.strip()}' a la frontera")
+            st.rerun()
+    with cols_actions[2]:
+        if st.button("Aprender 1 paso automático"):
+            if ai.learn_one_step():
+                st.rerun()
+            else:
+                st.success("Frontera agotada")
+
     st.header("💬 Chat con el Sistema")
     if 'chat_history' not in st.session_state:
         st.session_state.chat_history = []
