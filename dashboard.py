@@ -5,9 +5,12 @@ import csv
 import io
 import os
 from datetime import datetime
+import logging
 # graphviz not used — avoid extra dependency
 import time
 from ai_core_v2 import AdvancedAutonomousScholar  # ← CAMBIO AQUÍ
+
+logger_mod = logging.getLogger(__name__)
 
 st.set_page_config(layout="wide", page_title="Dashboard del Erudito Autónomo")
 
@@ -27,6 +30,9 @@ if 'scholar_ai' not in st.session_state:
     st.session_state.auto_save_enabled = False
     st.session_state.auto_save_every = 20
     st.session_state.last_saved_processed = 0
+    # Modo simple (UI reducida)
+    st.session_state.simple_mode = True
+    st.session_state.simple_suggestions = []
 
 
 def logger(message):
@@ -47,6 +53,10 @@ with st.sidebar:
     )
     st.session_state.strict_mode = st.checkbox(
         "Modo estricto (solo aprende temas seleccionados)", value=False
+    )
+    st.session_state.simple_mode = st.checkbox(
+        "Modo simple (seleccionar temas sugeridos)",
+        value=st.session_state.simple_mode,
     )
     st.markdown("---")
     st.subheader("📂 Sesiones")
@@ -101,7 +111,17 @@ with st.sidebar:
                 st.session_state.last_saved_processed = (
                     stats_loaded['processed_topics']
                 )
-            except Exception:
+            except (AttributeError, KeyError, TypeError) as e:
+                # Log targeted, keep visibility in UI
+                logger_mod.warning(
+                    "Failed to read 'processed_topics' after load_session: %s",
+                    e,
+                    exc_info=True,
+                )
+                st.warning(
+                    "No se pudo leer 'processed_topics' tras cargar sesión: "
+                    f"{e}"
+                )
                 st.session_state.last_saved_processed = 0
         else:
             st.error("No se pudo cargar la sesión. Verifica las rutas.")
@@ -125,7 +145,17 @@ with st.sidebar:
                     st.session_state.last_saved_processed = (
                         stats_loaded2['processed_topics']
                     )
-                except Exception:
+                except (AttributeError, KeyError, TypeError) as e:
+                    logger_mod.warning(
+                        "Failed to read 'processed_topics' after list load: "
+                        "%s",
+                        e,
+                        exc_info=True,
+                    )
+                    st.warning(
+                        "No se pudo leer 'processed_topics' tras cargar desde "
+                        f"listado: {e}"
+                    )
                     st.session_state.last_saved_processed = 0
             else:
                 st.error("No se pudo cargar desde el listado.")
@@ -161,6 +191,12 @@ with st.sidebar:
             logger_callback=logger,
         )
         st.session_state.scholar_ai.brain.novelty_threshold = novelty_threshold
+    # En modo simple: forzar aprendizaje solo por selección
+    # y desactivar auto
+        if st.session_state.simple_mode:
+            st.session_state.auto_mode = False
+            st.session_state.is_running = False
+            st.session_state.strict_mode = True
         st.rerun()
 
     if st.button("⏸️ Pausar", key="pause"):
@@ -197,6 +233,112 @@ if st.session_state.scholar_ai:
             height=300,
             label_visibility="hidden",
         )
+
+    # UI simplificada: seleccionar temas sugeridos y aprender
+    if st.session_state.simple_mode:
+        st.header("🎯 Selecciona temas sugeridos")
+
+        def build_simple_suggestions():
+            # Combina prioridades, frontera y (si hay) sugerencias del chat
+            prio = [t for _, t in sorted(ai.priority_queue, reverse=True)]
+            front = list(ai.learning_frontier)
+            chat_sugg = (
+                st.session_state.get('chat_suggestions', []) or []
+            )
+            combined = list(dict.fromkeys(prio + front + chat_sugg))
+            # Intento opcional de extraer sugerencias vía Q&A
+            try:
+                q = f"Sugiere temas relacionados con {initial_topic}"
+                ans = ai.answer_question(q, top_k=5)
+                if isinstance(ans, dict):
+                    extra = ans.get('suggested_next', []) or []
+                    combined = list(dict.fromkeys(combined + extra))
+            except Exception:
+                pass
+            # Filtrar procesados y limitar
+            combined = [
+                t for t in combined if t not in ai.processed_topics
+            ]
+            return combined[:20]
+
+        col_s1, col_s2 = st.columns([2, 1])
+        with col_s1:
+            if st.button("🔎 Buscar temas"):
+                st.session_state.simple_suggestions = (
+                    build_simple_suggestions()
+                )
+            # Búsqueda en Internet (Wikipedia)
+            q_online = st.text_input(
+                "Buscar en Internet (Wikipedia)",
+                value=initial_topic,
+            )
+            if st.button("🌐 Buscar en Internet") and q_online.strip():
+                try:
+                    online = ai.suggest_topics_online(
+                        q_online.strip(),
+                        limit=20,
+                    )
+                except Exception as e:
+                    online = []
+                    logger_mod.warning(
+                        "Fallo en sugerencias online para '%s': %s",
+                        q_online,
+                        e,
+                        exc_info=True,
+                    )
+                # Mezclar con las actuales y deduplicar
+                merged = list(
+                    dict.fromkeys(online + st.session_state.simple_suggestions)
+                )
+                st.session_state.simple_suggestions = merged[:20]
+        with col_s2:
+            st.info(
+                "En Modo simple: automático desactivado y "
+                "modo estricto activado"
+            )
+
+        if not st.session_state.simple_suggestions:
+            # Prellenar en primer render si hay datos
+            st.session_state.simple_suggestions = build_simple_suggestions()
+
+        sel_simple = st.multiselect(
+            "Temas sugeridos",
+            st.session_state.simple_suggestions,
+            max_selections=10,
+        )
+        if st.button("Aprender seleccionados (simple)") and sel_simple:
+            learned = 0
+            for t in sel_simple:
+                if ai.learn_topic(t):
+                    learned += 1
+            st.success(f"Aprendidos {learned} tema(s) en modo simple")
+            # Eliminar ya procesados y quizá autoguardar
+            st.session_state.simple_suggestions = [
+                t for t in st.session_state.simple_suggestions
+                if t not in ai.processed_topics
+            ]
+            # Auto-guardado si corresponde
+            try:
+                # maybe_autosave se define más abajo en la UI completa;
+                # aquí replicamos mínimo
+                if st.session_state.auto_save_enabled:
+                    stats_now = ai.get_stats()
+                    proc_now = stats_now.get('processed_topics', 0)
+                    if (
+                        proc_now - st.session_state.last_saved_processed
+                    ) >= int(st.session_state.auto_save_every):
+                        paths = ai.save_session()
+                        st.session_state.last_saved_processed = proc_now
+                        st.success(
+                            "Auto-guardado: "
+                            f"{paths['json']} | {paths['weights']}"
+                        )
+            except Exception:
+                pass
+            st.rerun()
+
+        # Ocultar el resto de la UI avanzada
+        st.stop()
 
     # Auto-guardado utilitario
     def maybe_autosave(ai_obj):
@@ -396,8 +538,12 @@ if st.session_state.scholar_ai:
                 st.session_state.last_saved_processed = (
                     ai.get_stats()['processed_topics']
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                logger_mod.exception(
+                    "Failed to update last_saved_processed from "
+                    "ai.get_stats(): %s",
+                    e,
+                )
     with auto_col:
         st.write(
             "Modo automático: " + (

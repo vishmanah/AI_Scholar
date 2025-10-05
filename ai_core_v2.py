@@ -378,6 +378,7 @@ class AdvancedKnowledgeExtractor:
             user_agent='AdvancedNeurogenicAI/2.0',
             language=lang,
         )
+        self.lang = lang
         
         # Caché para evitar consultas repetidas
         self.cache = {}
@@ -472,6 +473,65 @@ class AdvancedKnowledgeExtractor:
         # emb es (1, D)
         return emb[0]
 
+    def internet_topic_suggestions(
+        self,
+        query: str,
+        limit: int = 20,
+    ) -> List[str]:
+        """Busca sugerencias de temas en Internet usando Wikipedia.
+
+        Intenta primero la API 'opensearch' y, si falla, usa enlaces de la
+        página del tema como respaldo. No requiere dependencias externas.
+        """
+        if not query:
+            return []
+
+        suggestions: List[str] = []
+
+        # Intento 1: API opensearch de Wikipedia
+        try:
+            import urllib.parse as _up
+            import urllib.request as _ur
+            import json as _json
+
+            q = _up.quote(query)
+            url = (
+                f"https://{self.lang}.wikipedia.org/w/api.php?"
+                f"action=opensearch&search={q}&limit={limit}&namespace=0&"
+                f"format=json"
+            )
+            with _ur.urlopen(url, timeout=10) as resp:
+                data = resp.read().decode('utf-8')
+            parsed = _json.loads(data)
+            # Estructura: [query, [titles], [descriptions], [links]]
+            titles = (
+                parsed[1]
+                if isinstance(parsed, list) and len(parsed) > 1
+                else []
+            )
+            suggestions = [t for t in titles if isinstance(t, str)]
+        except Exception as e:
+            self.log(f"Fallo opensearch para '{query}': {e}")
+            suggestions = []
+
+        # Respaldo: usar links de la página
+        if not suggestions:
+            try:
+                page = self.wiki_api.page(query)
+                if page.exists():
+                    suggestions = list(page.links.keys())[:limit]
+            except Exception as e:
+                self.log(f"Fallo links de página para '{query}': {e}")
+
+        # Deduplicar preservando orden
+        seen = set()
+        uniq: List[str] = []
+        for t in suggestions:
+            if t not in seen:
+                seen.add(t)
+                uniq.append(t)
+        return uniq[:limit]
+
 # ==================== ERUDITO AUTÓNOMO MEJORADO ====================
  
 
@@ -497,6 +557,20 @@ class AdvancedAutonomousScholar:
         self.learning_frontier = deque([initial_topic])
         self.processed_topics = set()
         self.priority_queue = []
+
+    def suggest_topics_online(
+        self,
+        query: str,
+        limit: int = 20,
+    ) -> List[str]:
+        """Sugerencias de temas desde Internet (Wikipedia).
+
+        Filtra los ya procesados y respeta el límite indicado.
+        """
+        topics = self.knowledge_extractor.internet_topic_suggestions(
+            query, limit=limit
+        )
+        return [t for t in topics if t not in self.processed_topics][:limit]
         
         # Mapeo de conocimiento
         self.module_map: Dict[int, List[str]] = {}
