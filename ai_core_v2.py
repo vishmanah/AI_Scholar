@@ -557,6 +557,11 @@ class AdvancedAutonomousScholar:
         self.learning_frontier = deque([initial_topic])
         self.processed_topics = set()
         self.priority_queue = []
+        # Mapeo de conocimiento y métricas
+        self.module_map = {}
+        self.knowledge_graph = {}
+        self.learning_efficiency = []
+        self.curiosity_score = 1.0
 
     def suggest_topics_online(
         self,
@@ -571,14 +576,6 @@ class AdvancedAutonomousScholar:
             query, limit=limit
         )
         return [t for t in topics if t not in self.processed_topics][:limit]
-        
-        # Mapeo de conocimiento
-        self.module_map: Dict[int, List[str]] = {}
-        self.knowledge_graph: Dict[str, List[str]] = {}
-        
-        # Métricas
-        self.learning_efficiency = []
-        self.curiosity_score = 1.0
         
     def learn_one_step(self) -> bool:
         """Paso de aprendizaje optimizado"""

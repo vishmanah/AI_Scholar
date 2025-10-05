@@ -24,14 +24,14 @@ if 'scholar_ai' not in st.session_state:
         "Sistema listo. Configura e inicia el aprendizaje."
     ]
     st.session_state.is_running = False
-    st.session_state.auto_mode = False
+    st.session_state.auto_mode = True
     # Modos y auto-guardado
     st.session_state.strict_mode = False
     st.session_state.auto_save_enabled = False
     st.session_state.auto_save_every = 20
     st.session_state.last_saved_processed = 0
     # Modo simple (UI reducida)
-    st.session_state.simple_mode = True
+    st.session_state.simple_mode = False
     st.session_state.simple_suggestions = []
 
 
