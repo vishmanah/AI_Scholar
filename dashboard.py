@@ -16,6 +16,7 @@ if 'scholar_ai' not in st.session_state:
         "Sistema listo. Configura e inicia el aprendizaje."
     ]
     st.session_state.is_running = False
+    st.session_state.auto_mode = False
 
 
 def logger(message):
@@ -31,9 +32,13 @@ with st.sidebar:
     )
     
     novelty_threshold = st.slider("Umbral de Novedad", 0.1, 0.9, 0.5)
+    st.session_state.auto_mode = st.checkbox(
+        "Aprendizaje automático continuo", value=False
+    )
     
     if st.button("🚀 Iniciar", key="start"):
-        st.session_state.is_running = True
+        # En manual: no iniciar corriendo automáticamente
+        st.session_state.is_running = bool(st.session_state.auto_mode)
         st.session_state.log_messages = [f"Iniciando con '{initial_topic}'..."]
         st.session_state.scholar_ai = AdvancedAutonomousScholar(
             initial_topic=initial_topic,
@@ -220,7 +225,22 @@ if st.session_state.scholar_ai:
             ]
             st.rerun()
 
-    if st.session_state.is_running:
+    st.divider()
+    save_col, auto_col = st.columns([1, 1])
+    with save_col:
+        if st.button("💾 Guardar sesión"):
+            paths = ai.save_session()
+            st.success(
+                f"Checkpoint: {paths['json']} | Pesos: {paths['weights']}"
+            )
+    with auto_col:
+        st.write(
+            "Modo automático: " + (
+                "🟢 ON" if st.session_state.is_running else "⚪ OFF"
+            )
+        )
+
+    if st.session_state.is_running and st.session_state.auto_mode:
         keep_running = ai.learn_one_step()
         if not keep_running:
             st.session_state.is_running = False

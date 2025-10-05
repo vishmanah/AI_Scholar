@@ -710,3 +710,49 @@ class AdvancedAutonomousScholar:
             and topic not in self.processed_topics
         ):
             self.learning_frontier.append(topic)
+
+    def save_session(
+        self,
+        save_dir: str = "data/checkpoints",
+    ) -> Dict[str, str]:
+        """Guarda un checkpoint JSON y los pesos del cerebro en .pt
+
+        Devuelve dict con rutas generadas.
+        """
+        import os
+        import json
+        from datetime import datetime
+        os.makedirs(save_dir, exist_ok=True)
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+        # Resumen de memorias (sin embeddings para JSON)
+        mem_summary = []
+        for node in self.brain.episodic_memory.memories.values():
+            mem_summary.append({
+                'topic': node.topic,
+                'module_id': node.module_id,
+                'access_count': node.access_count,
+                'importance': node.importance_score,
+                'timestamp': node.timestamp,
+            })
+
+        payload = {
+            'stats': self.get_stats(),
+            'module_map': {k: v for k, v in self.module_map.items()},
+            'knowledge_graph': self.knowledge_graph,
+            'frontier': list(self.learning_frontier),
+            'priority_queue': list(self.priority_queue),
+            'processed_topics': list(self.processed_topics),
+            'memories': mem_summary,
+        }
+
+        json_path = os.path.join(save_dir, f'session_{ts}.json')
+        with open(json_path, 'w', encoding='utf-8') as f:
+            json.dump(payload, f, indent=2, ensure_ascii=False, default=str)
+
+        # Pesos de la red
+        weights_path = os.path.join(save_dir, f'brain_{ts}.pt')
+        torch.save(self.brain.state_dict(), weights_path)
+
+        self.log(f"Checkpoint guardado: {json_path} | Pesos: {weights_path}")
+        return {'json': json_path, 'weights': weights_path}
