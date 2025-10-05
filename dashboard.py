@@ -48,16 +48,29 @@ with st.sidebar:
     )
     
     novelty_threshold = st.slider("Umbral de Novedad", 0.1, 0.9, 0.5)
-    st.session_state.auto_mode = st.checkbox(
-        "Aprendizaje automático continuo", value=False
-    )
-    st.session_state.strict_mode = st.checkbox(
-        "Modo estricto (solo aprende temas seleccionados)", value=False
-    )
+    # Modo simple primero; si está activo, ocultar controles avanzados
     st.session_state.simple_mode = st.checkbox(
         "Modo simple (seleccionar temas sugeridos)",
         value=st.session_state.simple_mode,
     )
+    if st.session_state.simple_mode:
+        # Forzar estados: sin auto, estricto on, no corriendo
+        st.session_state.auto_mode = False
+        st.session_state.is_running = False
+        st.session_state.strict_mode = True
+        st.info(
+            "Modo simple activo: automático desactivado y modo estricto activo"
+        )
+    else:
+        st.session_state.auto_mode = st.checkbox(
+            "Aprendizaje automático continuo", value=bool(
+                st.session_state.get('auto_mode', False)
+            )
+        )
+        st.session_state.strict_mode = st.checkbox(
+            "Modo estricto (solo aprende temas seleccionados)",
+            value=bool(st.session_state.get('strict_mode', False)),
+        )
     st.markdown("---")
     st.subheader("📂 Sesiones")
     load_json = st.text_input(
