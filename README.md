@@ -27,5 +27,8 @@ Notas:
 - El extractor usa `sentence-transformers` y descarga modelos la primera vez.
 - Se crea automáticamente `data/checkpoints/` al guardar desde `main.py`.
 
+Documentación:
+- **[`ANALISIS_PROYECTO.md`](ANALISIS_PROYECTO.md)**: Análisis completo y detallado del proyecto (arquitectura, componentes, algoritmos, casos de uso, roadmap y más).
+
 Contribuir:
 - Abrir issues o PRs con mejoras. Añadir tests y CI antes de cambios mayores.
