@@ -35,6 +35,28 @@ with st.sidebar:
     st.session_state.auto_mode = st.checkbox(
         "Aprendizaje automático continuo", value=False
     )
+    st.markdown("---")
+    st.subheader("📂 Sesiones")
+    load_json = st.text_input(
+        "Ruta JSON (checkpoint)",
+        "data/checkpoints/session_YYYYMMDD_HHMMSS.json",
+    )
+    load_weights = st.text_input(
+        "Ruta Pesos (.pt)", "data/checkpoints/brain_YYYYMMDD_HHMMSS.pt"
+    )
+    reencode = st.checkbox("Re-encodar memorias (más lento)", value=True)
+    if st.button("Cargar sesión") and st.session_state.scholar_ai:
+        ok = st.session_state.scholar_ai.load_session(
+            json_path=load_json.strip(),
+            weights_path=(
+                load_weights.strip() if load_weights.strip() else None
+            ),
+            reencode_memories=bool(reencode),
+        )
+        if ok:
+            st.success("Sesión cargada correctamente.")
+        else:
+            st.error("No se pudo cargar la sesión. Verifica las rutas.")
     
     if st.button("🚀 Iniciar", key="start"):
         # En manual: no iniciar corriendo automáticamente

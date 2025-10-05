@@ -744,6 +744,8 @@ class AdvancedAutonomousScholar:
             'priority_queue': list(self.priority_queue),
             'processed_topics': list(self.processed_topics),
             'memories': mem_summary,
+            'module_metadata': self.brain.module_metadata,
+            'num_modules': len(self.brain.modules_list),
         }
 
         json_path = os.path.join(save_dir, f'session_{ts}.json')
@@ -756,3 +758,116 @@ class AdvancedAutonomousScholar:
 
         self.log(f"Checkpoint guardado: {json_path} | Pesos: {weights_path}")
         return {'json': json_path, 'weights': weights_path}
+
+    def load_session(
+        self,
+        json_path: str,
+        weights_path: Optional[str] = None,
+        reencode_memories: bool = True,
+    ) -> bool:
+        """Carga estado desde JSON y opcionalmente pesos de la red.
+
+        Intenta reconstruir módulos con arquitectura del JSON.
+        Si reencode_memories=True, reobtiene embeddings de tópicos (más lento).
+        """
+        import os
+        import json
+        if not os.path.isfile(json_path):
+            self.log(f"No existe JSON: {json_path}")
+            return False
+
+        with open(json_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+
+        # Restaurar estructuras de alto nivel
+        self.module_map = {
+            int(k): v for k, v in data.get('module_map', {}).items()
+        }
+        self.knowledge_graph = data.get('knowledge_graph', {})
+        from collections import deque
+        self.learning_frontier = deque(data.get('frontier', []))
+        self.priority_queue = [
+            tuple(x) for x in data.get('priority_queue', [])
+        ]
+        self.processed_topics = set(data.get('processed_topics', []))
+
+        # Reconstruir módulos con arquitectura
+        meta = data.get('module_metadata', [])
+        num_mods = data.get('num_modules', len(meta))
+
+        # Crear módulos con arquitecturas guardadas (o por defecto)
+        new_modules = []
+        for i in range(num_mods):
+            arch = [128, 64]
+            if i < len(meta):
+                arch = meta[i].get('architecture', arch)
+            mod = AdvancedNeurogenicModule(
+                self.brain.input_size,
+                self.brain.output_size,
+                hidden_sizes=arch,
+            ).to(device)
+            new_modules.append(mod)
+        self.brain.modules_list = nn.ModuleList(new_modules)
+        self.brain.module_metadata = (
+            meta if meta else self.brain.module_metadata
+        )
+
+    # Reconstruir gatekeeper embeddings
+    # (prototipo = primer tópico del módulo)
+        gks = []
+        for mid in range(len(self.brain.modules_list)):
+            topics = self.module_map.get(mid, [])
+            if topics:
+                try:
+                    emb, _, _ = self.knowledge_extractor.get_knowledge_package(
+                        topics[0]
+                    )
+                    if emb is None:
+                        emb = torch.zeros(self.brain.input_size, device=device)
+                except Exception:
+                    emb = torch.zeros(self.brain.input_size, device=device)
+            else:
+                emb = torch.zeros(self.brain.input_size, device=device)
+            gks.append(emb)
+        self.brain.gatekeeper_embeddings = (
+            torch.stack(gks, dim=0)
+            if gks
+            else torch.empty(
+                (0, self.brain.input_size),
+                device=device,
+            )
+        )
+
+        # Restaurar memorias
+        self.brain.episodic_memory.memories.clear()
+        for m in data.get('memories', []):
+            topic = m.get('topic')
+            if reencode_memories and topic:
+                emb, _, _ = self.knowledge_extractor.get_knowledge_package(
+                    topic
+                )
+                if emb is None:
+                    emb = torch.zeros(self.brain.input_size, device=device)
+            else:
+                emb = torch.zeros(self.brain.input_size, device=device)
+            node = KnowledgeNode(
+                topic=topic,
+                embedding=emb,
+                timestamp=float(m.get('timestamp', 0)),
+                module_id=int(m.get('module_id', 0)),
+                access_count=int(m.get('access_count', 0)),
+                importance_score=float(m.get('importance', 0.5)),
+            )
+            self.brain.episodic_memory.store(node)
+
+        # Intentar cargar pesos si se proporcionan
+        if weights_path and os.path.isfile(weights_path):
+            try:
+                state = torch.load(weights_path, map_location=device)
+                self.brain.load_state_dict(state)
+                self.log("Pesos cargados correctamente.")
+            except Exception as e:
+                self.log(f"No se pudieron cargar los pesos: {e}")
+
+        self.log("Sesión cargada.")
+        return True
