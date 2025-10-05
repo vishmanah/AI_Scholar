@@ -27,7 +27,7 @@ if 'scholar_ai' not in st.session_state:
     st.session_state.auto_mode = True
     # Modos y auto-guardado
     st.session_state.strict_mode = False
-    st.session_state.auto_save_enabled = False
+    st.session_state.auto_save_enabled = True
     st.session_state.auto_save_every = 20
     st.session_state.last_saved_processed = 0
     # Modo simple (UI reducida)
@@ -210,6 +210,16 @@ with st.sidebar:
             st.session_state.auto_mode = False
             st.session_state.is_running = False
             st.session_state.strict_mode = True
+        # Inicializar contador para auto-guardado
+        try:
+            stats_on_start = (
+                st.session_state.scholar_ai.get_stats()
+            )
+            st.session_state.last_saved_processed = (
+                stats_on_start.get('processed_topics', 0)
+            )
+        except Exception:
+            st.session_state.last_saved_processed = 0
         st.rerun()
 
     if st.button("⏸️ Pausar", key="pause"):
