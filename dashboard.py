@@ -1,5 +1,6 @@
 # dashboard.py (modificado)
 import streamlit as st
+import glob
 # graphviz not used — avoid extra dependency
 import time
 from ai_core_v2 import AdvancedAutonomousScholar  # ← CAMBIO AQUÍ
@@ -45,6 +46,28 @@ with st.sidebar:
         "Ruta Pesos (.pt)", "data/checkpoints/brain_YYYYMMDD_HHMMSS.pt"
     )
     reencode = st.checkbox("Re-encodar memorias (más lento)", value=True)
+    # Descubrir archivos disponibles
+    try:
+        json_files = sorted(
+            glob.glob("data/checkpoints/session_*.json"), reverse=True
+        )
+    except Exception:
+        json_files = []
+    try:
+        weight_files = sorted(
+            glob.glob("data/checkpoints/brain_*.pt"), reverse=True
+        )
+    except Exception:
+        weight_files = []
+
+    if json_files:
+        sel_json = st.selectbox("Elegir JSON disponible", json_files)
+    else:
+        sel_json = ""
+    if weight_files:
+        sel_w = st.selectbox("Elegir Pesos disponibles", weight_files)
+    else:
+        sel_w = ""
     if st.button("Cargar sesión") and st.session_state.scholar_ai:
         ok = st.session_state.scholar_ai.load_session(
             json_path=load_json.strip(),
@@ -57,6 +80,20 @@ with st.sidebar:
             st.success("Sesión cargada correctamente.")
         else:
             st.error("No se pudo cargar la sesión. Verifica las rutas.")
+    if st.button("Cargar desde listado") and st.session_state.scholar_ai:
+        if not sel_json:
+            st.error("No hay JSON seleccionado.")
+        else:
+            warg = sel_w if sel_w else None
+            ok2 = st.session_state.scholar_ai.load_session(
+                json_path=sel_json,
+                weights_path=warg,
+                reencode_memories=bool(reencode),
+            )
+            if ok2:
+                st.success("Sesión cargada desde el listado.")
+            else:
+                st.error("No se pudo cargar desde el listado.")
     
     if st.button("🚀 Iniciar", key="start"):
         # En manual: no iniciar corriendo automáticamente
