@@ -169,6 +169,8 @@ if st.session_state.scholar_ai:
             ai.priority_queue, reverse=True
         )][:5]
         all_opts = list(dict.fromkeys(sugg + extra_frontier + extra_priority))
+        # Limitar a 10 sugerencias
+        all_opts = all_opts[:10]
         st.session_state.chat_suggestions = [
             t for t in all_opts if t not in ai.processed_topics
         ]
