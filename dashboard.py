@@ -46,6 +46,9 @@ with st.sidebar:
         "Ruta Pesos (.pt)", "data/checkpoints/brain_YYYYMMDD_HHMMSS.pt"
     )
     reencode = st.checkbox("Re-encodar memorias (más lento)", value=True)
+    progress_every = st.slider(
+        "Frecuencia log re-encodado (items)", 10, 1000, 100, step=10
+    )
     # Descubrir archivos disponibles
     try:
         json_files = sorted(
@@ -75,6 +78,7 @@ with st.sidebar:
                 load_weights.strip() if load_weights.strip() else None
             ),
             reencode_memories=bool(reencode),
+            progress_log_every=int(progress_every),
         )
         if ok:
             st.success("Sesión cargada correctamente.")
@@ -89,11 +93,34 @@ with st.sidebar:
                 json_path=sel_json,
                 weights_path=warg,
                 reencode_memories=bool(reencode),
+                progress_log_every=int(progress_every),
             )
             if ok2:
                 st.success("Sesión cargada desde el listado.")
             else:
                 st.error("No se pudo cargar desde el listado.")
+
+    st.markdown("---")
+    st.subheader("🔍 Validación de Pesos")
+    if (
+        st.button("Validar compatibilidad (sin cargar)")
+        and st.session_state.scholar_ai
+    ):
+        jp = load_json.strip() if load_json.strip() else sel_json
+        wp = load_weights.strip() if load_weights.strip() else sel_w
+        if not jp or not wp:
+            st.warning("Especifica JSON y Pesos (o elige desde los listados)")
+        else:
+            okv, msg = (
+                st.session_state.scholar_ai.validate_weights_compatibility(
+                    json_path=jp,
+                    weights_path=wp,
+                )
+            )
+            if okv:
+                st.success(msg)
+            else:
+                st.error(msg)
     
     if st.button("🚀 Iniciar", key="start"):
         # En manual: no iniciar corriendo automáticamente

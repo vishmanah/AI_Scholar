@@ -958,3 +958,83 @@ class AdvancedAutonomousScholar:
 
         self.log("Sesión cargada.")
         return True
+
+    def validate_weights_compatibility(
+        self,
+        json_path: str,
+        weights_path: str,
+    ) -> Tuple[bool, str]:
+        """Valida compatibilidad entre módulos reconstruidos y pesos.
+
+        No modifica el estado del erudito. Devuelve (ok, mensaje).
+        """
+        import os
+        import json
+        if not os.path.isfile(json_path):
+            return False, f"JSON no existe: {json_path}"
+        if not os.path.isfile(weights_path):
+            return False, f"Pesos no existen: {weights_path}"
+
+        try:
+            with open(json_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+        except Exception as e:
+            return False, f"Error leyendo JSON: {e}"
+
+        meta = data.get('module_metadata', [])
+        num_mods = data.get('num_modules', len(meta))
+
+        # Construir red temporal con mismas dimensiones
+        temp_net = AdvancedSelfOrganizingNetwork(
+            input_size=self.brain.input_size,
+            output_size=self.brain.output_size,
+            novelty_threshold=self.brain.novelty_threshold,
+        ).to(device)
+        new_modules = []
+        for i in range(num_mods):
+            arch = [128, 64]
+            if i < len(meta):
+                arch = meta[i].get('architecture', arch)
+            mod = AdvancedNeurogenicModule(
+                temp_net.input_size,
+                temp_net.output_size,
+                hidden_sizes=arch,
+            ).to(device)
+            new_modules.append(mod)
+        temp_net.modules_list = nn.ModuleList(new_modules)
+
+        # Comparar con pesos
+        try:
+            loaded_state = torch.load(weights_path, map_location=device)
+        except Exception as e:
+            return False, f"Error leyendo pesos: {e}"
+
+        expected_state = temp_net.state_dict()
+        loaded_keys = set(loaded_state.keys())
+        expected_keys = set(expected_state.keys())
+        if loaded_keys != expected_keys:
+            missing = expected_keys - loaded_keys
+            extra = loaded_keys - expected_keys
+            msg = (
+                "Claves no coinciden. "
+                f"faltan={len(missing)}, extra={len(extra)}"
+            )
+            return False, msg
+
+        shape_mismatch = []
+        for k in expected_state:
+            if expected_state[k].shape != loaded_state[k].shape:
+                shape_mismatch.append(
+                    (
+                        k,
+                        tuple(expected_state[k].shape),
+                        tuple(loaded_state[k].shape),
+                    )
+                )
+        if shape_mismatch:
+            return False, (
+                "Formas distintas en algunos tensores, ej: "
+                f"{shape_mismatch[:3]}"
+            )
+
+        return True, "Compatibilidad OK"
