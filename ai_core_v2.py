@@ -746,6 +746,7 @@ class AdvancedAutonomousScholar:
             'memories': mem_summary,
             'module_metadata': self.brain.module_metadata,
             'num_modules': len(self.brain.modules_list),
+            'module_creation_history': self.brain.module_creation_history,
         }
 
         json_path = os.path.join(save_dir, f'session_{ts}.json')
@@ -764,14 +765,17 @@ class AdvancedAutonomousScholar:
         json_path: str,
         weights_path: Optional[str] = None,
         reencode_memories: bool = True,
+        progress_log_every: int = 100,
     ) -> bool:
         """Carga estado desde JSON y opcionalmente pesos de la red.
 
         Intenta reconstruir módulos con arquitectura del JSON.
-        Si reencode_memories=True, reobtiene embeddings de tópicos (más lento).
+        Si reencode_memories=True, reobtiene embeddings de tópicos.
         """
         import os
         import json
+        import time
+
         if not os.path.isfile(json_path):
             self.log(f"No existe JSON: {json_path}")
             return False
@@ -812,18 +816,31 @@ class AdvancedAutonomousScholar:
             meta if meta else self.brain.module_metadata
         )
 
-    # Reconstruir gatekeeper embeddings
-    # (prototipo = primer tópico del módulo)
+        # Restaurar historial de creación de módulos (meta-aprendizaje)
+        mch = data.get('module_creation_history', [])
+        if isinstance(mch, list):
+            self.brain.module_creation_history = mch
+        else:
+            self.brain.module_creation_history = (
+                self.brain.module_creation_history or []
+            )
+
+        # Reconstruir gatekeeper embeddings
+        # (prototipo = primer tópico del módulo)
         gks = []
         for mid in range(len(self.brain.modules_list)):
             topics = self.module_map.get(mid, [])
             if topics:
                 try:
-                    emb, _, _ = self.knowledge_extractor.get_knowledge_package(
-                        topics[0]
+                    emb, _, _ = (
+                        self.knowledge_extractor.get_knowledge_package(
+                            topics[0]
+                        )
                     )
                     if emb is None:
-                        emb = torch.zeros(self.brain.input_size, device=device)
+                        emb = torch.zeros(
+                            self.brain.input_size, device=device
+                        )
                 except Exception:
                     emb = torch.zeros(self.brain.input_size, device=device)
             else:
@@ -840,11 +857,15 @@ class AdvancedAutonomousScholar:
 
         # Restaurar memorias
         self.brain.episodic_memory.memories.clear()
-        for m in data.get('memories', []):
+        mem_list = data.get('memories', [])
+        total_m = len(mem_list)
+        start_t = time.time()
+        last_log_t = start_t
+        for idx, m in enumerate(mem_list):
             topic = m.get('topic')
             if reencode_memories and topic:
-                emb, _, _ = self.knowledge_extractor.get_knowledge_package(
-                    topic
+                emb, _, _ = (
+                    self.knowledge_extractor.get_knowledge_package(topic)
                 )
                 if emb is None:
                     emb = torch.zeros(self.brain.input_size, device=device)
@@ -860,14 +881,80 @@ class AdvancedAutonomousScholar:
             )
             self.brain.episodic_memory.store(node)
 
-        # Intentar cargar pesos si se proporcionan
+            # Progreso periódico
+            if reencode_memories and total_m > 0:
+                now = time.time()
+                processed = idx + 1
+                if (
+                    processed % max(1, progress_log_every) == 0
+                    or (now - last_log_t) >= 15
+                ):
+                    elapsed = now - start_t
+                    rate = processed / max(elapsed, 1e-6)
+                    remaining = total_m - processed
+                    eta = remaining / max(rate, 1e-6)
+                    self.log(
+                        f"Re-encodando memorias: {processed}/{total_m} | "
+                        f"idx={idx} | topic='{str(topic)[:50]}' | "
+                        f"t={elapsed:.1f}s | ETA={eta:.1f}s"
+                    )
+                    last_log_t = now
+
+        # Validar compatibilidad de pesos antes de cargar
         if weights_path and os.path.isfile(weights_path):
             try:
-                state = torch.load(weights_path, map_location=device)
-                self.brain.load_state_dict(state)
+                loaded_state = torch.load(weights_path, map_location=device)
+            except Exception as e:
+                self.log(f"Error leyendo pesos: {e}")
+                return False
+
+            expected_state = self.brain.state_dict()
+            loaded_keys = set(loaded_state.keys())
+            expected_keys = set(expected_state.keys())
+            if loaded_keys != expected_keys:
+                self.log(
+                    "Incompatibilidad de pesos: claves no coinciden. "
+                    f"loaded={len(loaded_keys)} vs "
+                    f"expected={len(expected_keys)}"
+                )
+                missing = expected_keys - loaded_keys
+                extra = loaded_keys - expected_keys
+                if missing:
+                    self.log(
+                        f"Faltan claves: {sorted(list(missing))[:5]}..."
+                    )
+                if extra:
+                    self.log(
+                        f"Claves extra: {sorted(list(extra))[:5]}..."
+                    )
+                return False
+
+            # Validar formas
+            shape_mismatch = []
+            for k in expected_state:
+                if k in loaded_state:
+                    if expected_state[k].shape != loaded_state[k].shape:
+                        shape_mismatch.append(
+                            (
+                                k,
+                                tuple(expected_state[k].shape),
+                                tuple(loaded_state[k].shape),
+                            )
+                        )
+            if shape_mismatch:
+                self.log(
+                    "Incompatibilidad de pesos: formas diferentes, p.ej.: "
+                    f"{shape_mismatch[:3]}"
+                )
+                return False
+
+            # Cargar pesos al ser compatibles
+            try:
+                self.brain.load_state_dict(loaded_state)
                 self.log("Pesos cargados correctamente.")
             except Exception as e:
                 self.log(f"No se pudieron cargar los pesos: {e}")
+                return False
 
         self.log("Sesión cargada.")
         return True
