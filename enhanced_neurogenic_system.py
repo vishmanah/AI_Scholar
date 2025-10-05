@@ -393,13 +393,46 @@ class AdvancedKnowledgeExtractor:
             return None, [], {}
             
     def _extract_key_terms(self, text: str, top_n: int = 5) -> List[str]:
-        """Extraer términos clave (implementación simple)"""
-        words = text.lower().split()
-        # Filtrar palabras comunes y cortas
-        words = [w for w in words if len(w) > 5]
-        # Retornar más frecuentes (simplificado)
+        """Extraer términos clave con análisis lingüístico"""
+        import re
         from collections import Counter
-        return [w for w, _ in Counter(words).most_common(top_n)]
+        
+        # Stop words comunes en español
+        stop_words = {
+            'el', 'la', 'de', 'que', 'y', 'a', 'en', 'un', 'ser', 'se', 'no', 'haber',
+            'por', 'con', 'su', 'para', 'como', 'estar', 'tener', 'le', 'lo', 'todo',
+            'pero', 'más', 'hacer', 'o', 'poder', 'decir', 'este', 'ir', 'otro', 'ese',
+            'la', 'si', 'me', 'ya', 'ver', 'porque', 'dar', 'cuando', 'él', 'muy',
+            'sin', 'vez', 'mucho', 'saber', 'qué', 'sobre', 'mi', 'alguno', 'mismo',
+            'yo', 'también', 'hasta', 'año', 'dos', 'querer', 'entre', 'así', 'primero',
+            'desde', 'grande', 'eso', 'ni', 'nos', 'llegar', 'pasar', 'tiempo', 'ella',
+            'sí', 'día', 'uno', 'bien', 'poco', 'deber', 'entonces', 'poner', 'cosa',
+            'tanto', 'hombre', 'parecer', 'nuestro', 'tan', 'donde', 'ahora', 'parte',
+            'después', 'vida', 'quedar', 'siempre', 'creer', 'hablar', 'llevar', 'dejar',
+            'nada', 'cada', 'seguir', 'menos', 'nuevo', 'encontrar', 'algo', 'solo', 'decir',
+            'puede', 'mediante', 'cual', 'algunos', 'esta', 'estos', 'estas', 'fue', 'son',
+            'era', 'han', 'sido', 'tiene', 'están', 'había', 'sea', 'tras', 'ante', 'durante',
+        }
+        
+        # Limpiar y tokenizar texto
+        text = text.lower()
+        # Eliminar puntuación y caracteres especiales, mantener letras y espacios
+        text = re.sub(r'[^a-záéíóúñü\s]', ' ', text)
+        # Dividir en palabras
+        words = text.split()
+        
+        # Filtrar: eliminar stop words, palabras cortas, y palabras muy comunes
+        filtered_words = [
+            w for w in words 
+            if len(w) > 5 and w not in stop_words and w.isalpha()
+        ]
+        
+        # Contar frecuencias y retornar las más comunes
+        if not filtered_words:
+            return []
+        
+        word_counts = Counter(filtered_words)
+        return [w for w, _ in word_counts.most_common(top_n)]
 
 # ==================== ERUDITO AUTÓNOMO MEJORADO ====================
 class AdvancedAutonomousScholar:
