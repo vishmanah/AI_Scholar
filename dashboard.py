@@ -138,6 +138,8 @@ if st.session_state.scholar_ai:
     st.header("💬 Chat con el Sistema")
     if 'chat_history' not in st.session_state:
         st.session_state.chat_history = []
+    if 'chat_suggestions' not in st.session_state:
+        st.session_state.chat_suggestions = []
 
     with st.form("chat_form", clear_on_submit=True):
         user_msg = st.text_input(
@@ -155,6 +157,21 @@ if st.session_state.scholar_ai:
             'role': 'assistant',
             'text': result
         })
+        # Guardar sugerencias de temas a aprender desde el chat
+        sugg = (
+            result.get('suggested_next', [])
+            if isinstance(result, dict)
+            else []
+        )
+        # Agregar primeros de frontera y prioridades como opciones extra
+        extra_frontier = list(ai.learning_frontier)[:5]
+        extra_priority = [t for _, t in sorted(
+            ai.priority_queue, reverse=True
+        )][:5]
+        all_opts = list(dict.fromkeys(sugg + extra_frontier + extra_priority))
+        st.session_state.chat_suggestions = [
+            t for t in all_opts if t not in ai.processed_topics
+        ]
 
     # Render chat
     for entry in st.session_state.chat_history[-10:]:
@@ -176,6 +193,30 @@ if st.session_state.scholar_ai:
                         st.code("\n".join(links[:3]))
             else:
                 st.markdown(f"**Sistema:** {res}")
+
+    # Selección de aprendizaje desde el chat
+    if st.session_state.chat_suggestions:
+        st.subheader("🔎 Sugerencias para aprender (desde chat)")
+        sel_chat = st.multiselect(
+            "Selecciona temas a aprender",
+            st.session_state.chat_suggestions,
+            max_selections=10,
+        )
+        if st.button("Aprender seleccionados (chat)") and sel_chat:
+            learned = 0
+            for t in sel_chat:
+                if ai.learn_topic(t):
+                    learned += 1
+            st.session_state.chat_history.append({
+                'role': 'assistant',
+                'text': f"Aprendidos {learned} tema(s) desde chat."
+            })
+            # Refrescar sugerencias eliminando los ya procesados
+            st.session_state.chat_suggestions = [
+                t for t in st.session_state.chat_suggestions
+                if t not in ai.processed_topics
+            ]
+            st.rerun()
 
     if st.session_state.is_running:
         keep_running = ai.learn_one_step()
