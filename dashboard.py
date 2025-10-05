@@ -1,6 +1,10 @@
 # dashboard.py (modificado)
 import streamlit as st
 import glob
+import csv
+import io
+import os
+from datetime import datetime
 # graphviz not used — avoid extra dependency
 import time
 from ai_core_v2 import AdvancedAutonomousScholar  # ← CAMBIO AQUÍ
@@ -18,6 +22,11 @@ if 'scholar_ai' not in st.session_state:
     ]
     st.session_state.is_running = False
     st.session_state.auto_mode = False
+    # Modos y auto-guardado
+    st.session_state.strict_mode = False
+    st.session_state.auto_save_enabled = False
+    st.session_state.auto_save_every = 20
+    st.session_state.last_saved_processed = 0
 
 
 def logger(message):
@@ -35,6 +44,9 @@ with st.sidebar:
     novelty_threshold = st.slider("Umbral de Novedad", 0.1, 0.9, 0.5)
     st.session_state.auto_mode = st.checkbox(
         "Aprendizaje automático continuo", value=False
+    )
+    st.session_state.strict_mode = st.checkbox(
+        "Modo estricto (solo aprende temas seleccionados)", value=False
     )
     st.markdown("---")
     st.subheader("📂 Sesiones")
@@ -82,6 +94,15 @@ with st.sidebar:
         )
         if ok:
             st.success("Sesión cargada correctamente.")
+            try:
+                stats_loaded = (
+                    st.session_state.scholar_ai.get_stats()
+                )
+                st.session_state.last_saved_processed = (
+                    stats_loaded['processed_topics']
+                )
+            except Exception:
+                st.session_state.last_saved_processed = 0
         else:
             st.error("No se pudo cargar la sesión. Verifica las rutas.")
     if st.button("Cargar desde listado") and st.session_state.scholar_ai:
@@ -97,6 +118,15 @@ with st.sidebar:
             )
             if ok2:
                 st.success("Sesión cargada desde el listado.")
+                try:
+                    stats_loaded2 = (
+                        st.session_state.scholar_ai.get_stats()
+                    )
+                    st.session_state.last_saved_processed = (
+                        stats_loaded2['processed_topics']
+                    )
+                except Exception:
+                    st.session_state.last_saved_processed = 0
             else:
                 st.error("No se pudo cargar desde el listado.")
 
@@ -168,6 +198,24 @@ if st.session_state.scholar_ai:
             label_visibility="hidden",
         )
 
+    # Auto-guardado utilitario
+    def maybe_autosave(ai_obj):
+        """Guardar sesión automáticamente cada N temas procesados."""
+        try:
+            proc = ai_obj.get_stats()['processed_topics']
+        except Exception:
+            return
+        if (
+            st.session_state.auto_save_enabled
+            and (proc - st.session_state.last_saved_processed)
+                >= int(st.session_state.auto_save_every)
+        ):
+            paths = ai_obj.save_session()
+            st.session_state.last_saved_processed = proc
+            st.success(
+                f"Auto-guardado: {paths['json']} | {paths['weights']}"
+            )
+
     st.header("🧠 Arquitectura Modular")
     if ai.module_map:
         cols = st.columns(min(len(ai.module_map), 4))
@@ -177,6 +225,23 @@ if st.session_state.scholar_ai:
                 st.info(f"{len(topics)} conceptos")
                 for topic in topics[:3]:
                     st.write(f"• {topic}")
+
+    # Controles de Auto-guardado
+    st.subheader("💾 Auto-guardado")
+    cols_av = st.columns(2)
+    with cols_av[0]:
+        st.session_state.auto_save_enabled = st.checkbox(
+            "Activar auto-guardado",
+            value=st.session_state.auto_save_enabled,
+        )
+    with cols_av[1]:
+        st.session_state.auto_save_every = st.slider(
+            "Cada N temas",
+            5,
+            200,
+            st.session_state.auto_save_every,
+            step=5,
+        )
 
     st.header("🧭 Control Manual de Aprendizaje")
     frontier_list = list(ai.learning_frontier)
@@ -209,6 +274,7 @@ if st.session_state.scholar_ai:
                 if ai.learn_topic(t):
                     learned += 1
             st.success(f"Aprendidos {learned} tema(s)")
+            maybe_autosave(ai)
             st.rerun()
     with cols_actions[1]:
         new_topic = st.text_input(
@@ -221,10 +287,16 @@ if st.session_state.scholar_ai:
             st.rerun()
     with cols_actions[2]:
         if st.button("Aprender 1 paso automático"):
-            if ai.learn_one_step():
-                st.rerun()
+            if st.session_state.strict_mode:
+                st.warning(
+                    "Modo estricto activo: usa selección manual o desde chat."
+                )
             else:
-                st.success("Frontera agotada")
+                if ai.learn_one_step():
+                    maybe_autosave(ai)
+                    st.rerun()
+                else:
+                    st.success("Frontera agotada")
 
     st.header("💬 Chat con el Sistema")
     if 'chat_history' not in st.session_state:
@@ -309,6 +381,7 @@ if st.session_state.scholar_ai:
                 t for t in st.session_state.chat_suggestions
                 if t not in ai.processed_topics
             ]
+            maybe_autosave(ai)
             st.rerun()
 
     st.divider()
@@ -319,6 +392,12 @@ if st.session_state.scholar_ai:
             st.success(
                 f"Checkpoint: {paths['json']} | Pesos: {paths['weights']}"
             )
+            try:
+                st.session_state.last_saved_processed = (
+                    ai.get_stats()['processed_topics']
+                )
+            except Exception:
+                pass
     with auto_col:
         st.write(
             "Modo automático: " + (
@@ -326,11 +405,53 @@ if st.session_state.scholar_ai:
             )
         )
 
-    if st.session_state.is_running and st.session_state.auto_mode:
+    # Exportar memorias a CSV
+    st.subheader("📤 Exportar Memorias a CSV")
+    if st.button("Exportar CSV"):
+        rows = []
+        for node in ai.brain.episodic_memory.memories.values():
+            rows.append([
+                node.topic,
+                node.module_id,
+                node.access_count,
+                node.importance_score,
+                node.timestamp,
+            ])
+        csv_buf = io.StringIO()
+        writer = csv.writer(csv_buf)
+        writer.writerow([
+            "topic",
+            "module_id",
+            "access_count",
+            "importance",
+            "timestamp",
+        ])
+        writer.writerows(rows)
+        csv_data = csv_buf.getvalue()
+        os.makedirs('data/checkpoints', exist_ok=True)
+        ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+        csv_path = f'data/checkpoints/memories_{ts}.csv'
+        with open(csv_path, 'w', encoding='utf-8', newline='') as f:
+            f.write(csv_data)
+        st.success(f"Exportado: {csv_path}")
+        st.download_button(
+            "Descargar CSV",
+            data=csv_data,
+            file_name=f"memories_{ts}.csv",
+            mime="text/csv",
+        )
+
+    if (
+        st.session_state.is_running
+        and st.session_state.auto_mode
+        and not st.session_state.strict_mode
+    ):
         keep_running = ai.learn_one_step()
         if not keep_running:
             st.session_state.is_running = False
             st.success("Aprendizaje completado")
+        else:
+            maybe_autosave(ai)
         time.sleep(0.5)
         st.rerun()
 else:
