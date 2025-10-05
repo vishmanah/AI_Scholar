@@ -87,6 +87,48 @@ if st.session_state.scholar_ai:
                 for topic in topics[:3]:
                     st.write(f"• {topic}")
 
+    st.header("💬 Chat con el Sistema")
+    if 'chat_history' not in st.session_state:
+        st.session_state.chat_history = []
+
+    with st.form("chat_form", clear_on_submit=True):
+        user_msg = st.text_input(
+            "Escribe tu pregunta:",
+            "¿Qué es un agente inteligente?",
+        )
+        submitted = st.form_submit_button("Enviar")
+    if submitted and user_msg.strip():
+        result = ai.answer_question(user_msg.strip(), top_k=5)
+        st.session_state.chat_history.append({
+            'role': 'user',
+            'text': user_msg.strip()
+        })
+        st.session_state.chat_history.append({
+            'role': 'assistant',
+            'text': result
+        })
+
+    # Render chat
+    for entry in st.session_state.chat_history[-10:]:
+        if entry['role'] == 'user':
+            st.markdown(f"**Tú:** {entry['text']}")
+        else:
+            res = entry['text']
+            if isinstance(res, dict):
+                st.markdown(f"**Sistema:** {res.get('question','')}")
+                items = res.get('items', [])
+                for it in items[:5]:
+                    st.write(
+                        f"• {it['topic']} (Módulo {it['module_id']}, "
+                        f"sim {it['similarity']:.2f})"
+                    )
+                    links = it.get('links', [])
+                    if links:
+                        st.caption("Enlaces:")
+                        st.code("\n".join(links[:3]))
+            else:
+                st.markdown(f"**Sistema:** {res}")
+
     if st.session_state.is_running:
         keep_running = ai.learn_one_step()
         if not keep_running:

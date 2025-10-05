@@ -6,7 +6,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-from typing import List, Tuple, Dict, Optional
+from typing import List, Tuple, Dict, Optional, Any
 from dataclasses import dataclass
 from collections import deque
 import hashlib
@@ -458,6 +458,20 @@ class AdvancedKnowledgeExtractor:
         from collections import Counter
         return [w for w, _ in Counter(words).most_common(top_n)]
 
+    def encode_text(self, text: str) -> torch.Tensor:
+        """Codifica texto libre a embedding en el dispositivo activo"""
+        if not text:
+            return torch.zeros(384, device=device)
+        with torch.no_grad():
+            emb = self.model.encode(
+                [text],
+                convert_to_tensor=True,
+                device=device,
+                show_progress_bar=False,
+            )
+        # emb es (1, D)
+        return emb[0]
+
 # ==================== ERUDITO AUTÓNOMO MEJORADO ====================
  
 
@@ -582,4 +596,46 @@ class AdvancedAutonomousScholar:
             'frontier_size': len(self.learning_frontier),
             'priority_queue_size': len(self.priority_queue),
             **self.brain.get_network_stats()
+        }
+
+    def answer_question(self, question: str, top_k: int = 5) -> Dict[str, Any]:
+        """Responde una consulta usando recuperación desde memorias.
+
+        Devuelve estructura con items relevantes y datos auxiliares.
+        """
+        try:
+            q_emb = self.knowledge_extractor.encode_text(question)
+        except Exception as e:
+            self.log(f"Error codificando consulta: {e}")
+            return {
+                'question': question,
+                'items': [],
+                'note': 'No fue posible codificar la consulta.'
+            }
+
+        # Recuperar memorias relevantes
+        nodes = self.brain.episodic_memory.retrieve(q_emb, top_k=top_k)
+
+        items = []
+        for node in nodes:
+            try:
+                sim = F.cosine_similarity(
+                    q_emb.unsqueeze(0), node.embedding.unsqueeze(0)
+                ).item()
+            except Exception:
+                sim = 0.0
+            items.append({
+                'topic': node.topic,
+                'module_id': node.module_id,
+                'similarity': float(sim),
+                'links': self.knowledge_graph.get(node.topic, [])
+            })
+
+        # Ordenar por similitud descendente
+        items.sort(key=lambda x: x['similarity'], reverse=True)
+
+        return {
+            'question': question,
+            'items': items,
+            'suggested_next': [it['topic'] for it in items[:3]],
         }
